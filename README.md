@@ -137,7 +137,7 @@ Add these 5 permissions:
 |------------|:------------:|---------|
 | `User.Read` | No | Sign-in |
 | `User.Read.All` | Yes | User search for reassignment |
-| `CopilotPackages.Read.All` | No | Read agent catalog |
+| `CopilotPackages.Read.All` | Yes | Read agent catalog |
 | `CopilotPackages.ReadWrite.All` | Yes | Block/unblock/reassign agents |
 | `IdentityRiskyServicePrincipal.Read.All` | Yes | Risky agent signals |
 
