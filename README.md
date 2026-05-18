@@ -89,54 +89,95 @@ Surface the full **Microsoft Agent 365** governance experience inside M365 Copil
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) 18+
-- [Microsoft 365 Agents Toolkit (ATK)](https://aka.ms/teams-toolkit) CLI or VS Code extension
-- [Dev Tunnels](https://learn.microsoft.com/azure/developer/dev-tunnels/) CLI (`devtunnel`)
-- An Azure/Entra ID app registration with Graph API permissions
-- M365 Copilot Chat access (included with M365 E5 or M365 Copilot license)
+- [Dev Tunnels CLI](https://learn.microsoft.com/azure/developer/dev-tunnels/get-started) (`devtunnel`)
+- M365 tenant with **Copilot Chat** access (M365 E5 or M365 Copilot license)
+- **Global Admin** or **Privileged Role Admin** to grant API consent
+- Test user with **Global Reader** / **Security Reader** / **Copilot Admin** role
+
+> 💡 ATK CLI is not installed globally — the provisioning command uses `npx` to download it automatically.
 
 ---
 
-## Quick Start
+## Setup Guide
 
-### 1. Clone & Install
+---
+
+### Step 1 — Clone & Install
 
 ```bash
-git clone https://github.com/<your-username>/agent365-mcpapp.git
+git clone https://github.com/Ramakrishnan24689/agent365-mcpapp.git
 cd agent365-mcpapp
 npm install
 ```
 
-### 2. Create Entra App Registration
+---
 
-In [Azure Portal](https://portal.azure.com) → Entra ID → App registrations:
+### Step 2 — Entra ID App Registration
 
-1. **Register a new app** (single-tenant or multi-tenant)
-2. **Platform:** Web
-3. **Redirect URI:** `https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect`
-4. **API Permissions** (Delegated — all require admin consent):
-   - `User.Read` (Microsoft Graph) — basic sign-in
-   - `User.ReadBasic.All` (Microsoft Graph) — search users for reassignment
-   - `CopilotSettings.ReadWrite.All` (Microsoft Graph) — read/block/unblock agents in the catalog
-   - `IdentityRiskyServicePrincipal.Read.All` (Microsoft Graph) — read risky agent signals
-5. **Expose an API:**
-   - Set Application ID URI: `api://<your-client-id>`
-   - Add scope: `access_as_user` (Admins and users can consent)
-6. **Authorized client applications:**
-   - Add `ab3be6b7-baf2-4ad0-ae4c-e0209abb4820` (M365 Copilot) for scope `access_as_user`
-7. **Create a client secret** — copy the value
-8. **Set `accessTokenAcceptedVersion` to `2`** in the app manifest (Entra portal → Manifest tab). Without this, OBO will fail with `AADSTS50013`.
+Open **[Azure Portal → Entra ID → App registrations → + New registration](https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/RegisteredApps)**.
 
-> **Important:** The admin-scoped permissions require a Global Administrator or Privileged Role Administrator to grant consent. The *calling user* must also hold an admin role (Global Reader, Security Reader, or Copilot Admin) for `/copilot/admin/...` endpoints to work — app-level consent alone is not sufficient.
+#### 2.1 — Register
 
-### 3. Configure Environment
+| Field | Value |
+|-------|-------|
+| Name | `Agent365-MCPApp` |
+| Supported account types | Single tenant |
+| Redirect URI — Platform | **Web** |
+| Redirect URI — URL | `https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect` |
+
+Click **Register**. Note down **Application (client) ID** and **Directory (tenant) ID** from the Overview page.
+
+#### 2.2 — API Permissions
+
+Go to **API permissions → + Add a permission → Microsoft Graph → Delegated permissions**.
+
+Add these 5 permissions:
+
+| Permission | Admin Consent | Purpose |
+|------------|:------------:|---------|
+| `User.Read` | No | Sign-in |
+| `User.Read.All` | Yes | User search for reassignment |
+| `CopilotPackages.Read.All` | No | Read agent catalog |
+| `CopilotPackages.ReadWrite.All` | Yes | Block/unblock/reassign agents |
+| `IdentityRiskyServicePrincipal.Read.All` | Yes | Risky agent signals |
+
+Then click **✓ Grant admin consent for \<your-tenant\>**. All 5 should show green ✅.
+
+> 💡 Search "CopilotPackages" in the permission picker to find them.
+
+#### 2.3 — Expose an API
+
+Go to **Expose an API**:
+
+1. Click **Add** next to Application ID URI → accept default `api://<your-client-id>` → **Save**
+2. Click **+ Add a scope**:
+   - Scope name: `access_as_user`
+   - Who can consent: **Admins and users**
+   - Fill display name/description fields → **Add scope**
+3. Click **+ Add a client application**:
+   - Client ID: `ab3be6b7-baf2-4ad0-ae4c-e0209abb4820` (this is M365 Copilot)
+   - Check `access_as_user` → **Add application**
+
+#### 2.4 — Client Secret
+
+Go to **Certificates & secrets → + New client secret** → Add → **copy the Value immediately** (shown only once).
+
+#### 2.5 — Set Token Version to v2 ⚠️
+
+Go to **Manifest** tab → find `"accessTokenAcceptedVersion"` → change `null` to `2` → **Save**.
+
+> Without this, OBO fails with `AADSTS50013`. This is the most common setup mistake.
+
+---
+
+### Step 3 — Configure Environment
 
 ```bash
-# Copy sample files
 cp .env.sample .env
 cp env/.env.local.user.sample env/.env.local.user
 ```
 
-Edit `.env`:
+**`.env`** (server runtime):
 ```env
 PORT=3001
 USE_MOCK_DATA=false
@@ -145,19 +186,32 @@ ENTRA_CLIENT_SECRET=<your-client-secret>
 ENTRA_TENANT_ID=<your-tenant-id>
 ```
 
-Edit `env/.env.local.user`:
+**`env/.env.local.user`** (ATK provisioning — same values):
 ```env
 AGENT365_MCP_CLIENT_ID=<your-client-id>
 AGENT365_MCP_CLIENT_SECRET=<your-client-secret>
 ```
 
-### 4. Build
+**`env/.env.local`** (update tunnel URL after Step 5):
+```env
+MCP_SERVER_URL=https://<tunnel-id>-3001.inc1.devtunnels.ms
+MCP_SERVER_DOMAIN=<tunnel-id>-3001.inc1.devtunnels.ms
+ENTRA_TENANT_ID=<your-tenant-id>
+```
+
+---
+
+### Step 4 — Build
 
 ```bash
 npm run build
 ```
 
-### 5. Start Dev Tunnel
+---
+
+### Step 5 — Start Dev Tunnel
+
+In a separate terminal (keep running):
 
 ```bash
 devtunnel create agent365-mcp --allow-anonymous
@@ -165,40 +219,50 @@ devtunnel port create agent365-mcp --port-number 3001
 devtunnel host agent365-mcp
 ```
 
-Copy the tunnel URL (e.g., `https://<id>-3001.inc1.devtunnels.ms`) and update `env/.env.local`:
+Copy the tunnel URL from output and update `env/.env.local` with it.
 
-```env
-MCP_SERVER_URL=https://<your-tunnel-id>-3001.inc1.devtunnels.ms
-MCP_SERVER_DOMAIN=<your-tunnel-id>-3001.inc1.devtunnels.ms
-ENTRA_TENANT_ID=<your-tenant-id>
-```
+---
 
-### 6. Start MCP Server
+### Step 6 — Start MCP Server
+
+In another terminal (keep running):
 
 ```bash
 npm run serve
 ```
 
-### 7. Provision & Deploy
+---
+
+### Step 7 — Provision to M365 Copilot
 
 ```bash
 npx -y --package @microsoft/m365agentstoolkit-cli atk provision --env local
 ```
 
-This will:
-- Register the Teams app
-- Create OAuth configuration in Developer Portal
-- Build and validate the app package
-- Deploy to M365 Copilot
+> **Re-provisioning?** Clear `AGENT365_MCP_AUTH_ID` in `env/.env.local` first if you changed tunnel URL or client ID.
 
-### 8. Test in M365 Copilot
+---
 
-Open the URL from the provision output:
+### Step 8 — Test
+
+Open the URL from provision output:
 ```
-https://m365.cloud.microsoft/chat/?titleId=<your-M365-TITLE-ID>
+https://m365.cloud.microsoft/chat/?titleId=<your-title-id>
 ```
 
 Try: *"Show me the agent registry"* or *"Show the agent map"*
+
+---
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| `AADSTS50013` / `AADSTS500011` | Set `accessTokenAcceptedVersion` to `2` in Manifest |
+| No sign-in prompt | Clear `AGENT365_MCP_AUTH_ID` → re-provision |
+| 403 from Graph | Grant admin consent + assign admin role to test user |
+| "We couldn't find this agent" | Re-provision (tunnel URL may have changed) |
+| `CopilotPackages` permissions not found | Tenant needs M365 Copilot license |
 
 ---
 
@@ -257,59 +321,29 @@ agent365-mcpapp/
 
 ## Authentication Deep-Dive
 
-### Why OBO?
+### OBO Flow Summary
 
-M365 Copilot obtains a token scoped to *your app* (`api://<client-id>/access_as_user`) — it cannot call Microsoft Graph directly on behalf of the user. Your MCP server uses the On-Behalf-Of (OBO) flow to exchange that incoming token for a Graph-scoped token representing the same user. This is the core pattern this sample demonstrates: **Copilot token → OBO → Graph token → API call → rich widget response**.
+```
+User → Copilot → [token: api://<client-id>/access_as_user] → MCP Server → [MSAL OBO] → Graph token → Graph API
+```
 
-### How the OBO Flow Works
-
-1. User opens Copilot Chat → asks "Show me agents"
-2. Copilot invokes the MCP plugin → triggers OAuth sign-in (first time only)
-3. User signs in → Copilot gets a token scoped to `api://<client-id>/access_as_user`
-4. Copilot sends the request to the MCP server with `Authorization: Bearer <token>`
-5. MCP server extracts the token → MSAL OBO exchange → gets a Graph-scoped token
-6. Server calls Graph API with the Graph token → returns data + widget
+Copilot obtains a token scoped to *your app* — it cannot call Graph directly. Your server exchanges it via OBO for a Graph-scoped token representing the same user.
 
 ### The `.default` Scope
 
-The server requests `https://graph.microsoft.com/.default` (see [`auth.ts:43`](auth.ts#L43)). This means the permissions granted are controlled entirely by the **app registration's configured API permissions** — not by per-call scope strings. Add or remove permissions in Entra, grant admin consent, and the OBO token automatically reflects the change.
+The server requests `https://graph.microsoft.com/.default` (see [`auth.ts`](auth.ts)). This means permissions are controlled entirely by the **app registration's configured API permissions** — not by per-call scope strings. Add/remove permissions in Entra, grant admin consent, and the OBO token automatically reflects the change.
 
-### Environment Variables Explained
+### Environment Variables
 
-| Variable | Used By | Purpose |
-|----------|---------|---------|
-| `ENTRA_CLIENT_ID` | MSAL in [`auth.ts`](auth.ts) | Identifies the app during OBO token exchange |
-| `ENTRA_CLIENT_SECRET` | MSAL in [`auth.ts`](auth.ts) | Proves app identity to Entra ID |
-| `ENTRA_TENANT_ID` | MSAL in [`auth.ts`](auth.ts) | Directs auth to your tenant |
-| `AGENT365_MCP_CLIENT_ID` | ATK provisioning ([`m365agents.yml`](m365agents.yml)) | Same Entra app — used by ATK to register OAuth in Teams Developer Portal |
-| `AGENT365_MCP_AUTH_ID` | ATK provisioning | OAuth registration ID created by ATK during `atk provision`. Clear this and re-provision if you change client ID or tunnel URL. |
+| Variable | Purpose |
+|----------|---------|
+| `ENTRA_CLIENT_ID` | App identity for MSAL OBO exchange |
+| `ENTRA_CLIENT_SECRET` | Proves app identity to Entra ID |
+| `ENTRA_TENANT_ID` | Directs auth to your tenant |
+| `AGENT365_MCP_CLIENT_ID` | Same as above — used by ATK provisioning |
+| `AGENT365_MCP_AUTH_ID` | OAuth registration ID (created by ATK — clear to re-register) |
 
-> **`ENTRA_CLIENT_ID` and `AGENT365_MCP_CLIENT_ID` are the same app.** Two env vars exist because ATK provisioning and the MSAL runtime each consume the value independently.
-
-### Why a Teams Redirect URI?
-
-The redirect URI `https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect` is required because ATK uses **Teams Developer Portal** as the OAuth registration broker for Copilot extensibility. Copilot's sign-in flow routes through this endpoint to complete the OAuth handshake.
-
-### Entra App Registration — Required Configuration
-
-| Setting | Value | Why |
-|---------|-------|-----|
-| Platform | Web | Required for server-side OBO |
-| Redirect URI | `https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect` | Teams Developer Portal OAuth broker |
-| `accessTokenAcceptedVersion` | **2** | Must be set in the app manifest JSON. Without this, MSAL Node OBO fails with `AADSTS50013` or `AADSTS500011`. This is the #1 silent-failure cause for OBO samples. |
-| Expose an API | `api://<client-id>/access_as_user` | The scope Copilot requests on sign-in |
-| Authorized client | `ab3be6b7-baf2-4ad0-ae4c-e0209abb4820` (M365 Copilot) | Pre-consents Copilot to request your app's scope |
-
-### Required API Permissions (Delegated)
-
-All require **admin consent**. The test account must also hold an admin role (Global Reader, Security Reader, or Copilot Admin) — the `/copilot/admin/...` endpoints require admin privilege on the *calling user*, not just the app.
-
-| Permission | Required For | Code Reference |
-|------------|-------------|----------------|
-| `User.Read` | Sign-in baseline | Always required |
-| `User.ReadBasic.All` | `search_users` directory lookups | [`src/graph/users.ts:16`](src/graph/users.ts#L16) |
-| `CopilotSettings.ReadWrite.All` | `/copilot/admin/catalog/packages` — read, block, unblock | [`src/graph/packages.ts`](src/graph/packages.ts) |
-| `IdentityRiskyServicePrincipal.Read.All` | `/identityProtection/riskyServicePrincipals` | [`src/graph/risk.ts:16`](src/graph/risk.ts#L16) |
+> `ENTRA_CLIENT_ID` and `AGENT365_MCP_CLIENT_ID` are the same app. Two vars exist because ATK and MSAL consume them independently.
 
 ---
 
@@ -359,13 +393,13 @@ tsc --noEmit
 
 | Endpoint | Permission | Purpose |
 |----------|-----------|---------|
-| `GET /beta/copilot/admin/catalog/packages` | `CopilotSettings.ReadWrite.All` | List all registered agents |
-| `GET /beta/copilot/admin/catalog/packages/{id}` | `CopilotSettings.ReadWrite.All` | Get agent detail (instructions, capabilities) |
-| `POST /beta/copilot/admin/catalog/packages/{id}/block` | `CopilotSettings.ReadWrite.All` | Block an agent |
-| `POST /beta/copilot/admin/catalog/packages/{id}/unblock` | `CopilotSettings.ReadWrite.All` | Unblock an agent |
-| `PATCH /beta/copilot/admin/catalog/packages/{id}` | `CopilotSettings.ReadWrite.All` | Reassign agent ownership |
+| `GET /beta/copilot/admin/catalog/packages` | `CopilotPackages.Read.All` | List all registered agents |
+| `GET /beta/copilot/admin/catalog/packages/{id}` | `CopilotPackages.Read.All` | Get agent detail (instructions, capabilities) |
+| `POST /beta/copilot/admin/catalog/packages/{id}/block` | `CopilotPackages.ReadWrite.All` | Block an agent |
+| `POST /beta/copilot/admin/catalog/packages/{id}/unblock` | `CopilotPackages.ReadWrite.All` | Unblock an agent |
+| `PATCH /beta/copilot/admin/catalog/packages/{id}` | `CopilotPackages.ReadWrite.All` | Reassign agent ownership |
 | `GET /beta/identityProtection/riskyServicePrincipals` | `IdentityRiskyServicePrincipal.Read.All` | Risk signals for service principals |
-| `GET /v1.0/users` | `User.ReadBasic.All` | Search users for reassignment |
+| `GET /v1.0/users` | `User.Read.All` | Search users for reassignment |
 
 ---
 
